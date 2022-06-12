@@ -4,6 +4,7 @@ members = [
     "cly/impl",
     "repc/facade",
     "repc/test-generator",
+    "repc/arocc",
     "repc/impl",
     "repc/tests",
 ]
