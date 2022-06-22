@@ -14,7 +14,7 @@ use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 use std::ops::Not;
 
-#[derive(Eq, PartialEq)]
+#[derive(Eq, PartialEq, Debug)]
 pub struct ConversionResult {
     pub types: HashMap<String, Type<TypeLayout>>,
     pub consts: HashMap<String, i128>,

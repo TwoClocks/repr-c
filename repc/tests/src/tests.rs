@@ -46,21 +46,27 @@ fn process_dir(
     global_config: &GlobalConfig,
     failed: &Mutex<Vec<String>>,
 ) -> Result<()> {
+    // if !dir.to_str().unwrap().contains("0068") {
+    //     return Ok(());
+    // }
     let config = read_input_config(dir)?.1;
     let input_path = dir.join("input.txt");
     let input = std::fs::read_to_string(&input_path)?;
     let declarations = cly_impl::parse(&input).context("Parsing failed")?;
-    TARGETS.par_iter().try_for_each(|target| {
-        if !process_target(&dir, &input, &declarations, *target, &config, global_config)
-            .with_context(|| anyhow!("processing target {} failed", target.name()))?
-        {
-            failed
-                .lock()
-                .unwrap()
-                .push(format!("{}/{}", dir.display(), target.name()));
-        }
-        Ok(())
-    })
+    TARGETS
+        .iter()
+        // .filter(|x| x == &&Target::X86_64UnknownLinuxGnu)
+        .try_for_each(|target| {
+            if !process_target(&dir, &input, &declarations, *target, &config, global_config)
+                .with_context(|| anyhow!("processing target {} failed", target.name()))?
+            {
+                failed
+                    .lock()
+                    .unwrap()
+                    .push(format!("{}/{}", dir.display(), target.name()));
+            }
+            Ok(())
+        })
 }
 
 fn process_target(

@@ -11,6 +11,7 @@ pub(crate) fn compute_layout(target: Target, ty: &Type<()>) -> Result<Type<TypeL
     super::compute_layout(target, ty, Dialect::Mingw)
 }
 
+#[derive(Debug)]
 pub(super) struct OngoingBitfield {
     // The size of the storage unit of the previous bitfield. This is the size of the underlying
     // type, e.g., `int`.

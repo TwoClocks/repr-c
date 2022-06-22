@@ -28,6 +28,7 @@ pub(super) fn layout_fields(
 
 fn layout_field(rlb: &mut RecordLayoutBuilder, field: &RecordField<()>) -> Result<()> {
     let ty = super::compute_layout(rlb.target, &field.ty, Dialect::Sysv)?;
+    // println!("fld_ty:{:?}", ty);
     let layout = match field.bit_width {
         Some(size_bits) => layout_bit_field(
             rlb,
@@ -80,6 +81,7 @@ fn layout_bit_field(
     let attr_packed = rlb.attr_packed || is_attr_packed(&field.annotations);
     let has_packing_annotations = attr_packed || rlb.max_field_alignment_bits.is_some();
     let annotation_alignment = annotation_alignment(rlb.target, &field.annotations).unwrap_or(1);
+    // println!("saa:{}\n", annotation_alignment);
     let first_unused_bit = match rlb.kind {
         RecordKind::Union => 0,
         RecordKind::Struct => rlb.size_bits,
@@ -141,6 +143,13 @@ fn layout_bit_field(
             inherited_alignment_bits = ty_field_alignment_bits
                 .max(annotation_alignment)
                 .min(max_field_alignment_bits);
+            // println!(
+            //     "in:{} aa:{} tfa:{} mxfa:{}",
+            //     inherited_alignment_bits,
+            //     annotation_alignment,
+            //     ty_field_alignment_bits,
+            //     max_field_alignment_bits
+            // );
         } else if attr_packed {
             // Otherwise, if the field or the record is packed, the field alignment is 1 bit unless
             // it is explicitly increased with __attribute__((aligned)). See test case 0077.
