@@ -1,0 +1,5 @@
+zig-cache/
+zig-out/
+# this build file is only to make neovim's zig LSP work better
+# the project doesn't need it
+build.zig

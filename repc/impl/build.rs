@@ -592,7 +592,7 @@ fn emit_targets() -> io::Result<()> {
 ///
 /// The notion of a target's system compiler matters because compilers generate slightly
 /// different layouts even on the same target.
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash )]
 #[non_exhaustive]
 pub enum Target {{
 "

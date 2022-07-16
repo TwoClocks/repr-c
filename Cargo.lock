@@ -30,6 +30,7 @@ dependencies = [
  "anyhow",
  "cly-impl",
  "gimli",
+ "itertools",
  "object",
  "pdb",
  "rayon",
@@ -253,6 +254,15 @@ name = "isnt"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a7558cc96ddcaf0b4144d7149984ace2899bb29d4ee2999979d429efc305200"
+
+[[package]]
+name = "itertools"
+version = "0.10.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a9a9d19fa1e79b6215ff29b9d6880b706147f16e9b1dbb1e4e5947b5b02bc5e3"
+dependencies = [
+ "either",
+]
 
 [[package]]
 name = "lazy_static"
