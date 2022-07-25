@@ -131,7 +131,7 @@ impl MaxExt<u64> for Option<u64> {
     }
 }
 
-pub(crate) fn align_to(n: u64, m: u64) -> Result<u64> {
+pub fn align_to(n: u64, m: u64) -> Result<u64> {
     assert!(m.is_power_of_two());
     let mask = m - 1;
     match n.checked_add(mask) {

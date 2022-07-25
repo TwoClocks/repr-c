@@ -8,11 +8,13 @@ itertools = "0.10.3"
 repc-tests = { path = "../tests" }
 repc-impl = { path = "../impl" }
 cly-impl = { path = "../../cly/impl" }
+# generator = { path = "../test-generator" }
 anyhow =  "1.0.38"
 tempdir = "0.3.7"
 serde = { version = "1.0.120", features = ["derive"] }
 toml = "0.5.8"
 rayon = "1.5.0"
+rand  = "0.8.5"
 gimli = "0.23.0"
 pdb = { git = "https://github.com/willglynn/pdb.git", rev = "01025d3a8ef9fcad814fa741adabb0396c29ca7d" }
 object = { git = "https://github.com/mahkoh/object.git", rev = "bddaeeac024b46c64ba92b62077d762e6631c993", features = ["coff"] }

@@ -13,6 +13,7 @@ const Feature = std.Target.Cpu.Feature;
 const Set = std.Target.Cpu.Feature.Set;
 const Os = std.Target.Os;
 const Abi = std.Target.Abi;
+const eqlIgnoreCase = std.ascii.eqlIgnoreCase;
 
 const FindTarget = struct {
     arch: ?Arch = null,
@@ -24,101 +25,144 @@ const FindTarget = struct {
 pub fn main() !void {
     const gpa = general_purpose_allocator.allocator();
     defer if (general_purpose_allocator.deinit()) std.process.exit(1);
+    const o_file = try std.fs.cwd().createFile("mapping.text", .{});
+    defer o_file.close();
+    const out = o_file.writer();
 
-    const res = try std.ChildProcess.exec(.{ .allocator = gpa, .argv = &.{
+    const rustc = try std.ChildProcess.exec(.{ .allocator = gpa, .argv = &.{
         "rustc",
         "--print",
         "target-list",
     } });
+    defer {
+        gpa.free(rustc.stdout);
+        gpa.free(rustc.stderr);
+    }
 
-    var targets = std.mem.tokenize(u8, res.stdout, "\n");
-    while (targets.next()) |target| {
-        var fill = FindTarget{};
+    // make a unique list from rustc as well
+    // has the hard-coded targets from repr-c
+    var rust_targets = std.StringHashMap(void).init(gpa);
+    defer rust_targets.deinit();
+    // mutiple rust targets can map to the same
+    // zig target. Keep track of the mappings
+    // so we can find and eliminate these rust
+    // targets
+    var mapping = std.StringHashMap(std.ArrayList([]const u8)).init(gpa);
+    defer mapping.deinit();
 
-        std.debug.print("{s}\n", .{target});
-        var ittr = std.mem.tokenize(u8, target, "-");
-        while (ittr.next()) |part| {
-            if (std.ascii.eqlIgnoreCase(part, "unknown")) continue;
-            searchArch(part, &fill);
-            searchModel(part, &fill);
-            searchOs(part, &fill);
-            searchAbi(part, &fill);
-        }
-        // ok. see if we can make a useful target out of all of this.
-        if (fill.arch) |arch| {
-            const end_tag = fill.os orelse Os.Tag.other;
-            const end_os = Os{
-                .tag = end_tag,
-                .version_range = Os.VersionRange.default(end_tag, arch),
-            };
-            const end_model = fill.model orelse Model.generic(arch);
-            const end_abi = fill.abi orelse Abi.default(arch, end_os);
-
-            const result = Target{
-                .cpu = .{
-                    .arch = arch,
-                    .model = end_model,
-                    .features = end_model.features,
-                },
-                .os = end_os,
-                .abi = end_abi,
-            };
-            std.debug.print("\t{s}-{s}-{s}-{s}\n", .{
-                @tagName(result.cpu.arch),
-                result.cpu.model.name,
-                @tagName(result.os.tag),
-                @tagName(result.abi),
-            });
+    var rust_t = std.mem.tokenize(u8, rustc.stdout, "\n");
+    while (rust_t.next()) |target| {
+        try rust_targets.put(target, .{});
+    }
+    for (static_list) |target| {
+        try rust_targets.put(target, {});
+    }
+    var it = rust_targets.keyIterator();
+    while (it.next()) |rt| {
+        var z_target = try gpa.alloc(u8, 128);
+        var strm = std.io.fixedBufferStream(z_target);
+        if (try resloveTarget(rt.*, strm.writer())) {
+            const ent = try mapping.getOrPut(strm.getWritten());
+            if (!ent.found_existing) {
+                ent.value_ptr.* = std.ArrayList([]const u8).init(gpa);
+            } else {
+                gpa.free(z_target);
+            }
+            try ent.value_ptr.append(rt.*);
         } else {
-            std.debug.print("\tno arch for target\n", .{});
-            continue;
+            gpa.free(z_target);
+            std.debug.print("no target for {s}\n", .{rt.*});
         }
     }
-    gpa.free(res.stdout);
-    gpa.free(res.stderr);
+    var k_itr = mapping.keyIterator();
+    while (k_itr.next()) |k| {
+        const v = mapping.get(k.*).?;
+        if (v.items.len > 1) {
+            std.debug.print("multi {s} : ", .{k.*});
+            for (v.items) |i| {
+                std.debug.print(" {s}", .{i});
+            }
+            std.debug.print("\n", .{});
+        }
+
+        for (v.items) |t| {
+            // safe to output
+            try out.print("{s}:{s}\n", .{ t, k.* });
+            // std.debug.print("single {s} : {s}\n", .{ k.*, v.items[0] });
+        }
+        v.deinit();
+        gpa.free(k.*);
+    }
+}
+fn resloveTarget(target: []const u8, writer: anytype) !bool {
+    var fill: FindTarget = .{};
+
+    // std.debug.print("{s} || ", .{target});
+    var ittr = std.mem.tokenize(u8, target, "-");
+    while (ittr.next()) |part| {
+        if (eqlIgnoreCase(part, "unknown") or eqlIgnoreCase(part, "none")) continue;
+        if (isUnknown(part)) {
+            fill.arch = null;
+            break;
+        }
+        searchArch(part, &fill);
+        searchModel(part, &fill);
+        searchOs(part, &fill);
+        searchAbi(part, &fill);
+    }
+    // ok. see if we can make a useful target out of all of this.
+    if (fill.arch) |arch| {
+        fill.os = fill.os orelse bl: {
+            fill.abi = fill.abi orelse Abi.none;
+            break :bl Os.Tag.other;
+        };
+        fill.model = fill.model orelse Model.baseline(arch);
+        const end_os: Os = .{
+            .tag = fill.os.?,
+            .version_range = Os.VersionRange.default(fill.os.?, arch),
+        };
+        fill.abi = fill.abi orelse Abi.default(arch, end_os);
+        try writer.print("{s}-{s}-{s}-{s}", .{
+            @tagName(fill.arch.?),
+            fill.model.?.name,
+            @tagName(fill.os.?),
+            @tagName(fill.abi.?),
+        });
+        return true;
+    }
+    return false;
+}
+fn isUnknown(text: []const u8) bool {
+    for (unknown_zig) |u| {
+        if (eqlIgnoreCase(text, u)) return true;
+    }
+    return false;
 }
 
 fn searchAbi(text: []const u8, res: *FindTarget) void {
     if (res.abi != null) return;
-    inline for (@typeInfo(Abi).Enum.fields) |fld| {
-        if (std.ascii.eqlIgnoreCase(fld.name, text)) {
-            res.abi = @intToEnum(Target.Abi, fld.value);
-            return;
-        }
-    }
+    res.abi = std.meta.stringToEnum(Abi, text);
 }
 
 fn searchOs(text: []const u8, res: *FindTarget) void {
     if (res.os != null) return;
-    if (std.ascii.eqlIgnoreCase("darwin", text)) {
+    if (eqlIgnoreCase("darwin", text)) {
         res.os = Os.Tag.macos;
         if (res.arch.? == .i386) {
             // i686 etc is ambgious. can be both 32 or 64 bit
             // but macos is only 64 bit.
-            std.debug.print("\tswap.\n", .{});
             res.arch = Arch.x86_64;
         }
         return;
     }
-    inline for (@typeInfo(Os.Tag).Enum.fields) |fld| {
-        if (std.ascii.eqlIgnoreCase(fld.name, text)) {
-            res.os = @intToEnum(Target.Os.Tag, fld.value);
-            if (res.os.? == .macos and res.arch.? == .i386) {
-                // i686 etc is ambgious. can be both 32 or 64 bit
-                // but macos is only 64 bit.
-                std.debug.print("\tswap.\n", .{});
-                res.arch = Arch.x86_64;
-            }
-            return;
-        }
-    }
+    res.os = std.meta.stringToEnum(Os.Tag, text);
 }
 
 fn searchModel(text: []const u8, res: *FindTarget) void {
     if (res.model != null or res.arch == null) return;
     for (res.arch.?.allCpuModels()) |mod| {
         if (mod.llvm_name) |ll| {
-            if (std.ascii.eqlIgnoreCase(ll, text)) {
+            if (eqlIgnoreCase(ll, text)) {
                 res.model = mod;
                 return;
             }
@@ -133,10 +177,25 @@ fn searchArch(text: []const u8, res: *FindTarget) void {
         res.arch = a;
         return;
     }
+    // sometimes the first part of the triplet is a cpu model
+    // like i686
+    // because i386 comes before x86_64 in the enum,
+    // i686 etc will default to 32-bit (i386)
+    // it's ambgious.. so.. seems safe?
+    for (std.enums.values(Arch)) |a| {
+        for (a.allCpuModels()) |mod| {
+            const ll = mod.llvm_name orelse continue;
+            if (eqlIgnoreCase(text, ll)) {
+                res.arch = a;
+                res.model = mod;
+                return;
+            }
+        }
+    }
 
     // rust targets like armebv7r-none-eabi have both the arch and the cpu
-    // in the "target" part of the string. Walk the string backwards and see
-    // if ther is a arch in there.
+    // in the "arch" part of the string. Walk the string backwards and see
+    // if ther is a arch in the front
 
     var end = text.len - 1;
     // no arch less than 3 long
@@ -145,64 +204,114 @@ fn searchArch(text: []const u8, res: *FindTarget) void {
             // fount it.
             res.arch = a;
 
-            const maybeModel = text[end..];
+            var maybeModel = text[end..];
             if (maybeModel.len <= 0) return;
+            // rust has targeets like mipsisa32r, which zig is misp32r
+            // so trip the isa
+            if (a == Arch.mips and std.mem.startsWith(u8, maybeModel, "isa")) {
+                maybeModel = maybeModel[3..];
+            } else if (Arch.isRISCV(a)) {
+                // strip off leading "i" if exists
+                // zig doesn't support expiremtnal ISA's ATM.
+                if (maybeModel[0] == 'i') {
+                    maybeModel = maybeModel[1..];
+                }
+                searchRiscV(maybeModel, a, res);
+                return;
+            }
 
             // search for CPU model in the end of the string.
 
             for (a.allCpuModels()) |mod| {
                 const ll = mod.llvm_name orelse continue;
-                if (std.ascii.eqlIgnoreCase(ll, maybeModel)) {
+                if (eqlIgnoreCase(ll, maybeModel)) {
                     res.model = mod;
                     return;
                 }
             }
-            // hmm... maybe it's a feature name.
-            res.model = searchFeatures(text, a);
-            if (res.model == null) {
-                // sometines only the end part is a feature
-                // std.debug.print(" l:{s} ", .{maybeModel});
-                res.model = searchFeatures(maybeModel, a);
-            }
-            return;
+            // sometines only the end part is a feature
+            res.model = searchFeatures(maybeModel, a);
         }
     }
-
-    if (res.arch == null) {
-        // sometimes the first part of the triplet is a cpu model
-        // like i686
-        // because i386 comes before x86_64 in the enum,
-        // i686 etc will default to 32-bit (i386)
-        // it's ambgious.. so.. seems safe?
-        for (std.enums.values(Arch)) |a| {
-            for (a.allCpuModels()) |mod| {
-                const ll = mod.llvm_name orelse continue;
-                if (std.ascii.eqlIgnoreCase(text, ll)) {
-                    res.arch = a;
-                    res.model = mod;
-                    return;
-                }
+}
+fn searchRiscV(sub: []const u8, arch: Arch, fill: *FindTarget) void {
+    if (sub.len == 0 or eqlIgnoreCase(sub, "gc")) {
+        fill.arch = arch;
+        fill.model = Model.generic(arch);
+        return;
+    }
+    var f_union: Feature.Set = std.mem.zeroes(Feature.Set);
+    const allFeat = arch.allFeaturesList();
+    const has64 = allFeat[@enumToInt(std.Target.riscv.Feature.@"64bit")];
+    for (sub) |_, idx| {
+        const check = sub[idx .. idx + 1];
+        for (allFeat) |hay| {
+            if (eqlIgnoreCase(hay.name, check) or
+                eqlIgnoreCase(hay.llvm_name orelse "", check))
+            {
+                f_union.addFeature(hay.index);
             }
         }
     }
-    return;
+    std.debug.print("rv-{s}-{s} ", .{ @tagName(arch), sub });
+    var iter = featureIndexIterator(f_union);
+    while (iter.next()) |i| {
+        std.debug.print("{s}:", .{allFeat[i].name});
+    }
+    var min_count: usize = std.math.maxInt(usize);
+    for (arch.allCpuModels()) |mod| {
+        if (arch == .riscv64 and !hasFeature(mod, has64, .riscv64, null)) continue;
+        var m_union: Feature.Set = std.mem.zeroes(Feature.Set);
+        featuresUnion(mod, arch, &m_union);
+        var match = true;
+        for (m_union.ints) |_, idx| {
+            const mi = m_union.ints[idx];
+            const fi = f_union.ints[idx];
+            if (mi & fi != fi) {
+                match = false;
+                break;
+            }
+        }
+        const f_count = count(m_union);
+        if (f_count < min_count) {
+            fill.arch = arch;
+            fill.model = mod;
+            min_count = f_count;
+        }
+    }
+    std.debug.print("   {s} {s}\n", .{ @tagName(arch), fill.model.?.name });
 }
 
-fn searchFeatures(text: []const u8, arch: Arch) ?*const Model {
+fn searchFeatures(sub: []const u8, arch: Arch) ?*const Model {
     var ret: ?*const Model = null;
+    // all the armeb cpu modles/features called "armxxxx" so strip the eb
+    const m_arch = if (arch == Arch.armeb) Arch.arm else arch;
+    const full = @tagName(m_arch);
+    const flen = full.len;
     for (arch.allFeaturesList()) |feat| {
-        if (feat.llvm_name) |ll| {
-            if (std.ascii.eqlIgnoreCase(ll, text)) {
-                var max: usize = std.math.maxInt(usize);
-                for (arch.allCpuModels()) |mod| {
-                    var f_count: usize = 0;
-                    if (hasFeature(mod, feat, arch, &f_count)) {
-                        if (f_count < max) {
-                            ret = mod;
-                            max = f_count;
-                        }
+        const ll = feat.llvm_name orelse "";
+        // a bunch of these names are like 'mips64r6' and sub is just '64rlr'
+        // so strip off the arch name from the front if it exists
+        const lloff = if (std.mem.startsWith(u8, ll, full)) flen else 0;
+        const noff = if (std.mem.startsWith(u8, feat.name, full)) flen else 0;
+        // std.debug.print("b:{s}:{s}:{s}:{s}:{s}\n", .{ sub, @tagName(arch), @tagName(m_arch), ll[lloff..], feat.name[noff..] });
+        if (eqlIgnoreCase(ll[lloff..], sub) or
+            eqlIgnoreCase(feat.name[noff..], sub))
+        {
+            // std.debug.print("a:{s}:{s}:{s}:{s}:{s}\n", .{ sub, @tagName(arch), @tagName(m_arch), ll[lloff..], feat.name[noff..] });
+            var max: usize = std.math.maxInt(usize);
+            for (arch.allCpuModels()) |mod| {
+                var f_count: usize = 0;
+                if (hasFeature(mod, feat, arch, &f_count)) {
+                    if (f_count < max) {
+                        ret = mod;
+                        max = f_count;
+                        // std.debug.print("set:{s}={s}\n", .{ sub, mod.llvm_name });
                     }
                 }
+            }
+            if (ret == null) {
+                std.debug.print("No cpu has feature {s}\n", .{sub});
             }
         }
     }
@@ -279,6 +388,192 @@ pub fn hasFeature(model: *const Model, feature: Feature, arch: Arch, f_count: ?*
     }
     return feat_union.isEnabled(feature.index);
 }
+// these Os and Abi are not supported by zig
+// don't bother mapping
+const unknown_zig = [_][]const u8{
+    "kmc",
+    "solid_asp3",
+    "softfloat",
+    "wrs",
+    "vxworks",
+    "redox",
+    "fortanix",
+    "illumos",
+    "uclibc",
+    "linuxkernel", // some day
+    // "elf", // can't map obj formats to a target
+    "uclibc", // to bad. this seems like a zig thing
+    "gnullvm", // this makes no sense to me
+    "uwp",
+    "openwrt",
+    "muslabi64",
+    "gnu_ilp32",
+    "netbsdelf",
+    "androideabi",
+    "rumprun",
+    "uclibceabi",
+    "uclibcgnueabi",
+    "sim",
+    "kernel",
+    "gnuspe",
+    "sony",
+};
+const static_list = [_][]const u8{
+    "aarch64-apple-darwin",
+    "aarch64-apple-ios",
+    "aarch64-apple-ios-macabi",
+    "aarch64-apple-tvos",
+    "aarch64-fuchsia",
+    "aarch64-linux-android",
+    "aarch64-pc-windows-msvc",
+    "aarch64-unknown-freebsd",
+    "aarch64-unknown-hermit",
+    "aarch64-unknown-linux-gnu",
+    "aarch64-unknown-linux-musl",
+    "aarch64-unknown-netbsd",
+    "aarch64-unknown-none",
+    "aarch64-unknown-none-softfloat",
+    "aarch64-unknown-openbsd",
+    "aarch64-unknown-redox",
+    "aarch64-uwp-windows-msvc",
+    "aarch64-wrs-vxworks",
+    "armebv7r-none-eabi",
+    "armebv7r-none-eabihf",
+    "arm-linux-androideabi",
+    "arm-unknown-linux-gnueabi",
+    "arm-unknown-linux-gnueabihf",
+    "arm-unknown-linux-musleabi",
+    "arm-unknown-linux-musleabihf",
+    "armv4t-unknown-linux-gnueabi",
+    "armv5te-unknown-linux-gnueabi",
+    "armv5te-unknown-linux-musleabi",
+    "armv5te-unknown-linux-uclibceabi",
+    "armv6-unknown-freebsd",
+    "armv6-unknown-netbsd-eabihf",
+    "armv7a-none-eabi",
+    "armv7a-none-eabihf",
+    "armv7-apple-ios",
+    "armv7-linux-androideabi",
+    "armv7r-none-eabi",
+    "armv7r-none-eabihf",
+    "armv7s-apple-ios",
+    "armv7-unknown-freebsd",
+    "armv7-unknown-linux-gnueabi",
+    "armv7-unknown-linux-gnueabihf",
+    "armv7-unknown-linux-musleabi",
+    "armv7-unknown-linux-musleabihf",
+    "armv7-unknown-netbsd-eabihf",
+    "armv7-wrs-vxworks-eabihf",
+    "asmjs-unknown-emscripten",
+    "avr-unknown-gnu-atmega328",
+    "hexagon-unknown-linux-musl",
+    "i386-apple-ios",
+    "i586-pc-windows-msvc",
+    "i586-unknown-linux-gnu",
+    "i586-unknown-linux-musl",
+    "i686-apple-darwin",
+    "i686-linux-android",
+    "i686-pc-windows-gnu",
+    "i686-pc-windows-msvc",
+    "i686-unknown-freebsd",
+    "i686-unknown-haiku",
+    "i686-unknown-linux-gnu",
+    "i686-unknown-linux-musl",
+    "i686-unknown-netbsd",
+    "i686-unknown-openbsd",
+    "i686-unknown-uefi",
+    "i686-uwp-windows-gnu",
+    "i686-uwp-windows-msvc",
+    "i686-wrs-vxworks",
+    "mips64el-unknown-linux-gnuabi64",
+    "mips64el-unknown-linux-muslabi64",
+    "mips64-unknown-linux-gnuabi64",
+    "mips64-unknown-linux-muslabi64",
+    "mipsel-sony-psp",
+    "mipsel-unknown-linux-gnu",
+    "mipsel-unknown-linux-musl",
+    "mipsel-unknown-linux-uclibc",
+    "mipsel-unknown-none",
+    "mipsisa32r6el-unknown-linux-gnu",
+    "mipsisa32r6-unknown-linux-gnu",
+    "mipsisa64r6el-unknown-linux-gnuabi64",
+    "mipsisa64r6-unknown-linux-gnuabi64",
+    "mips-unknown-linux-gnu",
+    "mips-unknown-linux-musl",
+    "mips-unknown-linux-uclibc",
+    "msp430-none-elf",
+    "powerpc64le-unknown-linux-gnu",
+    "powerpc64le-unknown-linux-musl",
+    "powerpc64-unknown-freebsd",
+    "powerpc64-unknown-linux-gnu",
+    "powerpc64-unknown-linux-musl",
+    "powerpc64-wrs-vxworks",
+    "powerpc-unknown-linux-gnu",
+    "powerpc-unknown-linux-gnuspe",
+    "powerpc-unknown-linux-musl",
+    "powerpc-unknown-netbsd",
+    "powerpc-wrs-vxworks",
+    "powerpc-wrs-vxworks-spe",
+    "riscv32gc-unknown-linux-gnu",
+    "riscv32imac-unknown-none-elf",
+    "riscv32imc-unknown-none-elf",
+    "riscv32i-unknown-none-elf",
+    "riscv64gc-unknown-linux-gnu",
+    "riscv64gc-unknown-none-elf",
+    "riscv64imac-unknown-none-elf",
+    "s390x-unknown-linux-gnu",
+    "sparc64-unknown-linux-gnu",
+    "sparc64-unknown-netbsd",
+    "sparc64-unknown-openbsd",
+    "sparc-unknown-linux-gnu",
+    "sparcv9-sun-solaris",
+    "thumbv4t-none-eabi",
+    "thumbv6m-none-eabi",
+    "thumbv7a-pc-windows-msvc",
+    "thumbv7a-uwp-windows-msvc",
+    "thumbv7em-none-eabi",
+    "thumbv7em-none-eabihf",
+    "thumbv7m-none-eabi",
+    "thumbv7neon-linux-androideabi",
+    "thumbv7neon-unknown-linux-gnueabihf",
+    "thumbv7neon-unknown-linux-musleabihf",
+    "thumbv8m.base-none-eabi",
+    "thumbv8m.main-none-eabi",
+    "thumbv8m.main-none-eabihf",
+    "wasm32-unknown-emscripten",
+    "wasm32-unknown-unknown",
+    "wasm32-wasi",
+    "x86_64-apple-darwin",
+    "x86_64-apple-ios",
+    "x86_64-apple-ios-macabi",
+    "x86_64-apple-tvos",
+    "x86_64-fortanix-unknown-sgx",
+    "x86_64-fuchsia",
+    "x86_64-linux-android",
+    "x86_64-linux-kernel",
+    "x86_64-pc-solaris",
+    "x86_64-pc-windows-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-rumprun-netbsd",
+    "x86_64-sun-solaris",
+    "x86_64-unknown-dragonfly",
+    "x86_64-unknown-freebsd",
+    "x86_64-unknown-haiku",
+    "x86_64-unknown-hermit",
+    "x86_64-unknown-hermit-kernel",
+    "x86_64-unknown-illumos",
+    "x86_64-unknown-l4re-uclibc",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-unknown-linux-gnux32",
+    "x86_64-unknown-linux-musl",
+    "x86_64-unknown-netbsd",
+    "x86_64-unknown-openbsd",
+    "x86_64-unknown-redox",
+    "x86_64-unknown-uefi",
+    "x86_64-uwp-windows-gnu",
+    "x86_64-uwp-windows-msvc",
+    "x86_64-wrs-vxworks",
+};
 
 test "while" {
     var c: usize = 0;
@@ -286,4 +581,13 @@ test "while" {
         if (c == 22) break;
     }
     std.debug.assert(c == 22);
+}
+test "enums" {
+    var found = false;
+    inline for (@typeInfo(Abi).Enum.fields) |fld| {
+        std.debug.print("{s}\n", .{fld.name});
+        if (eqlIgnoreCase(fld.name, "eabi")) found = true;
+    }
+    std.debug.assert(found);
+    std.debug.assert(std.meta.stringToEnum(Abi, "eabi") == Abi.eabi);
 }

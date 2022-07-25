@@ -46,9 +46,6 @@ fn process_dir(
     global_config: &GlobalConfig,
     failed: &Mutex<Vec<String>>,
 ) -> Result<()> {
-    // if !dir.to_str().unwrap().contains("0068") {
-    //     return Ok(());
-    // }
     let config = read_input_config(dir)?.1;
     let input_path = dir.join("input.txt");
     let input = std::fs::read_to_string(&input_path)?;

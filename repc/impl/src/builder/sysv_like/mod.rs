@@ -119,14 +119,12 @@ fn compute_record_layout(
         kind,
         ongoing_bitfield: None,
     };
-    // println!("rec_bl:{:?}\n\tan:{:?}\n\tf:{:?}", rlb, annotations, fields);
     match dialect {
         Dialect::Mingw => mingw::layout_fields(&mut rlb, fields)?,
         Dialect::Sysv => sysv::layout_fields(&mut rlb, fields)?,
     }
     // The size of a record is always a multiple of its alignment. See test case 0066.
     rlb.size_bits = align_to(rlb.size_bits, rlb.alignment_bits)?;
-    // println!("done:{:?}\n", rlb);
     Ok(Type {
         layout: TypeLayout {
             size_bits: rlb.size_bits,
