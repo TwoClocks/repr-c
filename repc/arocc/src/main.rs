@@ -52,6 +52,9 @@ fn main() {
 /// this is ugly ugly ugly code.
 /// it's only intended to be run once, to generate the test files
 /// for arocc. Don't judge me.
+/// this is meant to be run in the /reprc/tests directory.
+/// you will also need a `mapping.txt` file in the same directoy.
+/// The zig code in /repr/arocc generrates this file.
 fn main_() -> std::io::Result<()> {
     let mut reprc_zig_map: HashMap<Target, String> = HashMap::new();
     {
@@ -108,7 +111,7 @@ fn main_() -> std::io::Result<()> {
         let f_name = format!("{}_test.c", dir_name);
         let mut out_str = "// SPDX-License-Identifier: GPL-3.0-or-later\n\n\
         // This test file is auto-generated. do not edit.\n\
-        // This file is a derivative work from the test files found\
+        // This file is a derivative work from the test files found\n\
         // in this repo : https://github.com/mahkoh/repr-c\n\
         // and is under the same licence as the original work.\n\n"
             .to_string();
