@@ -112,14 +112,11 @@ fn resloveTarget(target: []const u8, writer: anytype) !bool {
     }
     // ok. see if we can make a useful target out of all of this.
     if (fill.arch) |arch| {
-        fill.os = fill.os orelse bl: {
-            fill.abi = fill.abi orelse Abi.none;
-            break :bl Os.Tag.other;
-        };
+        fill.os = fill.os orelse Os.Tag.other;
         fill.model = fill.model orelse Model.baseline(arch);
         const end_os: Os = .{
             .tag = fill.os.?,
-            .version_range = Os.VersionRange.default(fill.os.?, arch),
+            .version_range = .{ .none = {} },
         };
         fill.abi = fill.abi orelse Abi.default(arch, end_os);
         try writer.print("{s}-{s}-{s}-{s}", .{
@@ -146,16 +143,16 @@ fn searchAbi(text: []const u8, res: *FindTarget) void {
 
 fn searchOs(text: []const u8, res: *FindTarget) void {
     if (res.os != null) return;
-    if (eqlIgnoreCase("darwin", text)) {
-        res.os = Os.Tag.macos;
-        if (res.arch.? == .i386) {
-            // i686 etc is ambgious. can be both 32 or 64 bit
-            // but macos is only 64 bit.
-            res.arch = Arch.x86_64;
-        }
-        return;
+    if (eqlIgnoreCase("darwin", text) or eqlIgnoreCase("macosx", text)) {
+        res.os = .macos;
+        // if (res.arch.? == .i386) {
+        //     // i686 etc is ambgious. can be both 32 or 64 bit
+        //     // but macos is only 64 bit.
+        //     res.arch = Arch.x86_64;
+        // }
+    } else {
+        res.os = std.meta.stringToEnum(Os.Tag, text);
     }
-    res.os = std.meta.stringToEnum(Os.Tag, text);
 }
 
 fn searchModel(text: []const u8, res: *FindTarget) void {
@@ -417,12 +414,10 @@ const unknown_zig = [_][]const u8{
     "kernel",
     "gnuspe",
     "sony",
+    "arm64", // no 64bit arm yet.
 };
 const static_list = [_][]const u8{
-    "aarch64-apple-darwin",
-    "aarch64-apple-ios",
-    "aarch64-apple-ios-macabi",
-    "aarch64-apple-tvos",
+    "aarch64-apple-macosx",
     "aarch64-fuchsia",
     "aarch64-linux-android",
     "aarch64-pc-windows-msvc",
@@ -432,46 +427,39 @@ const static_list = [_][]const u8{
     "aarch64-unknown-linux-musl",
     "aarch64-unknown-netbsd",
     "aarch64-unknown-none",
-    "aarch64-unknown-none-softfloat",
     "aarch64-unknown-openbsd",
     "aarch64-unknown-redox",
-    "aarch64-uwp-windows-msvc",
-    "aarch64-wrs-vxworks",
-    "armebv7r-none-eabi",
-    "armebv7r-none-eabihf",
+    "arm64-apple-ios",
+    "arm64-apple-ios-macabi",
+    "arm64-apple-tvos",
+    "armebv7r-unknown-none-eabi",
+    "armebv7r-unknown-none-eabihf",
     "arm-linux-androideabi",
     "arm-unknown-linux-gnueabi",
     "arm-unknown-linux-gnueabihf",
-    "arm-unknown-linux-musleabi",
-    "arm-unknown-linux-musleabihf",
     "armv4t-unknown-linux-gnueabi",
     "armv5te-unknown-linux-gnueabi",
-    "armv5te-unknown-linux-musleabi",
-    "armv5te-unknown-linux-uclibceabi",
-    "armv6-unknown-freebsd",
-    "armv6-unknown-netbsd-eabihf",
+    "armv5te-unknown-linux-uclibcgnueabi",
+    "armv6-unknown-freebsd-gnueabihf",
+    "armv6-unknown-netbsdelf-eabihf",
     "armv7a-none-eabi",
     "armv7a-none-eabihf",
     "armv7-apple-ios",
-    "armv7-linux-androideabi",
-    "armv7r-none-eabi",
-    "armv7r-none-eabihf",
+    "armv7-none-linux-android",
+    "armv7r-unknown-none-eabi",
+    "armv7r-unknown-none-eabihf",
     "armv7s-apple-ios",
-    "armv7-unknown-freebsd",
+    "armv7-unknown-freebsd-gnueabihf",
     "armv7-unknown-linux-gnueabi",
     "armv7-unknown-linux-gnueabihf",
-    "armv7-unknown-linux-musleabi",
-    "armv7-unknown-linux-musleabihf",
-    "armv7-unknown-netbsd-eabihf",
-    "armv7-wrs-vxworks-eabihf",
-    "asmjs-unknown-emscripten",
-    "avr-unknown-gnu-atmega328",
+    "armv7-unknown-netbsdelf-eabihf",
+    "avr-unknown-unknown",
     "hexagon-unknown-linux-musl",
     "i386-apple-ios",
     "i586-pc-windows-msvc",
     "i586-unknown-linux-gnu",
     "i586-unknown-linux-musl",
-    "i686-apple-darwin",
+    "i686-apple-macosx",
     "i686-linux-android",
     "i686-pc-windows-gnu",
     "i686-pc-windows-msvc",
@@ -479,16 +467,13 @@ const static_list = [_][]const u8{
     "i686-unknown-haiku",
     "i686-unknown-linux-gnu",
     "i686-unknown-linux-musl",
-    "i686-unknown-netbsd",
+    "i686-unknown-netbsdelf",
     "i686-unknown-openbsd",
-    "i686-unknown-uefi",
-    "i686-uwp-windows-gnu",
-    "i686-uwp-windows-msvc",
-    "i686-wrs-vxworks",
+    "i686-unknown-windows",
     "mips64el-unknown-linux-gnuabi64",
-    "mips64el-unknown-linux-muslabi64",
+    "mips64el-unknown-linux-musl",
     "mips64-unknown-linux-gnuabi64",
-    "mips64-unknown-linux-muslabi64",
+    "mips64-unknown-linux-musl",
     "mipsel-sony-psp",
     "mipsel-unknown-linux-gnu",
     "mipsel-unknown-linux-musl",
@@ -507,20 +492,14 @@ const static_list = [_][]const u8{
     "powerpc64-unknown-freebsd",
     "powerpc64-unknown-linux-gnu",
     "powerpc64-unknown-linux-musl",
-    "powerpc64-wrs-vxworks",
     "powerpc-unknown-linux-gnu",
     "powerpc-unknown-linux-gnuspe",
     "powerpc-unknown-linux-musl",
     "powerpc-unknown-netbsd",
-    "powerpc-wrs-vxworks",
-    "powerpc-wrs-vxworks-spe",
-    "riscv32gc-unknown-linux-gnu",
-    "riscv32imac-unknown-none-elf",
-    "riscv32imc-unknown-none-elf",
-    "riscv32i-unknown-none-elf",
-    "riscv64gc-unknown-linux-gnu",
-    "riscv64gc-unknown-none-elf",
-    "riscv64imac-unknown-none-elf",
+    "riscv32",
+    "riscv32-unknown-linux-gnu",
+    "riscv64",
+    "riscv64-unknown-linux-gnu",
     "s390x-unknown-linux-gnu",
     "sparc64-unknown-linux-gnu",
     "sparc64-unknown-netbsd",
@@ -530,49 +509,38 @@ const static_list = [_][]const u8{
     "thumbv4t-none-eabi",
     "thumbv6m-none-eabi",
     "thumbv7a-pc-windows-msvc",
-    "thumbv7a-uwp-windows-msvc",
-    "thumbv7em-none-eabi",
     "thumbv7em-none-eabihf",
+    "thumbv7em-none-eabi",
     "thumbv7m-none-eabi",
-    "thumbv7neon-linux-androideabi",
-    "thumbv7neon-unknown-linux-gnueabihf",
-    "thumbv7neon-unknown-linux-musleabihf",
     "thumbv8m.base-none-eabi",
-    "thumbv8m.main-none-eabi",
     "thumbv8m.main-none-eabihf",
+    "thumbv8m.main-none-eabi",
     "wasm32-unknown-emscripten",
     "wasm32-unknown-unknown",
     "wasm32-wasi",
-    "x86_64-apple-darwin",
-    "x86_64-apple-ios",
     "x86_64-apple-ios-macabi",
+    "x86_64-apple-ios",
+    "x86_64-apple-macosx",
     "x86_64-apple-tvos",
-    "x86_64-fortanix-unknown-sgx",
+    "x86_64-elf",
     "x86_64-fuchsia",
     "x86_64-linux-android",
-    "x86_64-linux-kernel",
     "x86_64-pc-solaris",
     "x86_64-pc-windows-gnu",
     "x86_64-pc-windows-msvc",
     "x86_64-rumprun-netbsd",
-    "x86_64-sun-solaris",
     "x86_64-unknown-dragonfly",
     "x86_64-unknown-freebsd",
     "x86_64-unknown-haiku",
     "x86_64-unknown-hermit",
-    "x86_64-unknown-hermit-kernel",
-    "x86_64-unknown-illumos",
     "x86_64-unknown-l4re-uclibc",
-    "x86_64-unknown-linux-gnu",
     "x86_64-unknown-linux-gnux32",
+    "x86_64-unknown-linux-gnu",
     "x86_64-unknown-linux-musl",
     "x86_64-unknown-netbsd",
     "x86_64-unknown-openbsd",
     "x86_64-unknown-redox",
-    "x86_64-unknown-uefi",
-    "x86_64-uwp-windows-gnu",
-    "x86_64-uwp-windows-msvc",
-    "x86_64-wrs-vxworks",
+    "x86_64-unknown-windows",
 };
 
 test "while" {

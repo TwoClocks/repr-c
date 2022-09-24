@@ -96,7 +96,7 @@ impl Generator {
             writeln!(self.current, "#pragma pack()")?;
         }
 
-        writeln!(self.current, "struct {}_alignment {{", name)?;
+        writeln!(self.current, "struct {}_extra_alignment {{", name)?;
         if self.compiler == Compiler::Msvc {
             writeln!(self.current, "    char a[_Alignof({})];", name)?;
             writeln!(self.current, "    char b;")?;
@@ -106,39 +106,39 @@ impl Generator {
         }
         writeln!(self.current, "}};")?;
         let id = self.generate_id();
-        writeln!(self.current, "struct {}_alignment var{};", name, id)?;
+        writeln!(self.current, "struct {}_extra_alignment var{};", name, id)?;
 
         writeln!(self.current, "#pragma pack(1)")?;
-        writeln!(self.current, "struct {}_packed {{", name)?;
+        writeln!(self.current, "struct {}_extra_packed {{", name)?;
         writeln!(self.current, "    {} a;", name)?;
         writeln!(self.current, "}};")?;
         writeln!(self.current, "#pragma pack()")?;
-        writeln!(self.current, "struct {}_required_alignment {{", name)?;
+        writeln!(self.current, "struct {}_extra_required_alignment {{", name)?;
         if self.compiler == Compiler::Msvc {
             writeln!(
                 self.current,
-                "    char a[_Alignof(struct {}_packed)];",
+                "    char a[_Alignof(struct {}_extra_packed)];",
                 name
             )?;
             writeln!(self.current, "    char b;")?;
         } else {
             writeln!(self.current, "    char a;")?;
-            writeln!(self.current, "    struct {}_packed b;", name)?;
+            writeln!(self.current, "    struct {}_extra_packed b;", name)?;
         }
         writeln!(self.current, "}};")?;
         let id = self.generate_id();
         writeln!(
             self.current,
-            "struct {}_required_alignment var{};",
+            "struct {}_extra_required_alignment var{};",
             name, id
         )?;
 
-        writeln!(self.current, "struct {}_size {{", name)?;
+        writeln!(self.current, "struct {}_extra_size {{", name)?;
         writeln!(self.current, "    char a[sizeof({})+1];", name)?;
         writeln!(self.current, "    char b;")?;
         writeln!(self.current, "}};")?;
         let id = self.generate_id();
-        writeln!(self.current, "struct {}_size var{};", name, id)?;
+        writeln!(self.current, "struct {}_extra_size var{};", name, id)?;
 
         writeln!(self.output, "{}", self.current)?;
         self.current = self.stack.pop().unwrap();

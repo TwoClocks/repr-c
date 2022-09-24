@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2018"
 
 [dependencies]
+lazy_static = "1.4.0"
 itertools = "0.10.3"
 repc-tests = { path = "../tests" }
 repc-impl = { path = "../impl" }

@@ -31,6 +31,7 @@ dependencies = [
  "cly-impl",
  "gimli",
  "itertools",
+ "lazy_static",
  "object",
  "pdb",
  "rand 0.8.5",
