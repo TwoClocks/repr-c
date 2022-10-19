@@ -52,7 +52,7 @@ pub fn main() !void {
 
     var rust_t = std.mem.tokenize(u8, rustc.stdout, "\n");
     while (rust_t.next()) |target| {
-        try rust_targets.put(target, .{});
+        try rust_targets.put(target, {});
     }
     for (static_list) |target| {
         try rust_targets.put(target, {});
@@ -322,7 +322,7 @@ const FeatureIterator = struct {
 
     pub fn next(self: *Self) ?Set.Index {
         // no ffs, so ctz+1
-        const ffs = @intCast(usize, @ctz(usize, self.current));
+        const ffs = @intCast(usize, @ctz(self.current));
         if (ffs >= @bitSizeOf(usize)) {
             // have we checked the whole array?
             if (self.ints_indx == 0) return null;
@@ -350,7 +350,7 @@ pub fn featureIndexIterator(set: Set) FeatureIterator {
 pub fn count(set: Set) usize {
     var ret: usize = 0;
     for (set.ints) |i| {
-        ret += @popCount(usize, i);
+        ret += @popCount(i);
     }
     return ret;
 }
