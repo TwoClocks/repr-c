@@ -100,7 +100,15 @@ fn resolveTarget(target: []const u8, writer: anytype) !bool {
     var fill: FindTarget = .{};
 
     // std.debug.print("{s} || ", .{target});
-    var ittr = std.mem.tokenize(u8, target, "-");
+    var ittr = std.mem.split(u8, target, "-");
+    var last: []const u8 = undefined;
+    while (ittr.next()) |part| {
+        last = part;
+    }
+    if (eqlIgnoreCase(last, "none")) {
+        fill.abi = .none;
+    }
+    ittr.reset();
     while (ittr.next()) |part| {
         if (eqlIgnoreCase(part, "unknown") or eqlIgnoreCase(part, "none")) continue;
         if (isUnknown(part)) {
