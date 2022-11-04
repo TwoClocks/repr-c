@@ -62,7 +62,7 @@ pub fn main() !void {
         const key = entry.key_ptr.*;
         var z_target = try gpa.alloc(u8, 128);
         var strm = std.io.fixedBufferStream(z_target);
-        if (try resloveTarget(key, strm.writer())) {
+        if (try resolveTarget(key, strm.writer())) {
             const ent = try mapping.getOrPut(strm.getWritten());
             if (!ent.found_existing) {
                 ent.value_ptr.* = std.ArrayList([]const u8).init(gpa);
@@ -96,7 +96,7 @@ pub fn main() !void {
         gpa.free(k);
     }
 }
-fn resloveTarget(target: []const u8, writer: anytype) !bool {
+fn resolveTarget(target: []const u8, writer: anytype) !bool {
     var fill: FindTarget = .{};
 
     // std.debug.print("{s} || ", .{target});
