@@ -41,13 +41,13 @@ pub fn main() !void {
 
     // make a unique list from rustc as well
     // has the hard-coded targets from repr-c
-    var rust_targets = std.StringHashMap(void).init(gpa);
+    var rust_targets = std.StringArrayHashMap(void).init(gpa);
     defer rust_targets.deinit();
     // mutiple rust targets can map to the same
     // zig target. Keep track of the mappings
     // so we can find and eliminate these rust
     // targets
-    var mapping = std.StringHashMap(std.ArrayList([]const u8)).init(gpa);
+    var mapping = std.StringArrayHashMap(std.ArrayList([]const u8)).init(gpa);
     defer mapping.deinit();
 
     var rust_t = std.mem.tokenize(u8, rustc.stdout, "\n");
@@ -57,28 +57,30 @@ pub fn main() !void {
     for (static_list) |target| {
         try rust_targets.put(target, {});
     }
-    var it = rust_targets.keyIterator();
-    while (it.next()) |rt| {
+    var it = rust_targets.iterator();
+    while (it.next()) |entry| {
+        const key = entry.key_ptr.*;
         var z_target = try gpa.alloc(u8, 128);
         var strm = std.io.fixedBufferStream(z_target);
-        if (try resloveTarget(rt.*, strm.writer())) {
+        if (try resolveTarget(key, strm.writer())) {
             const ent = try mapping.getOrPut(strm.getWritten());
             if (!ent.found_existing) {
                 ent.value_ptr.* = std.ArrayList([]const u8).init(gpa);
             } else {
                 gpa.free(z_target);
             }
-            try ent.value_ptr.append(rt.*);
+            try ent.value_ptr.append(key);
         } else {
             gpa.free(z_target);
-            std.debug.print("no target for {s}\n", .{rt.*});
+            std.debug.print("no target for {s}\n", .{key});
         }
     }
-    var k_itr = mapping.keyIterator();
-    while (k_itr.next()) |k| {
-        const v = mapping.get(k.*).?;
+    var k_itr = mapping.iterator();
+    while (k_itr.next()) |entry| {
+        const k = entry.key_ptr.*;
+        const v = entry.value_ptr.*;
         if (v.items.len > 1) {
-            std.debug.print("multi {s} : ", .{k.*});
+            std.debug.print("multi {s} : ", .{k});
             for (v.items) |i| {
                 std.debug.print(" {s}", .{i});
             }
@@ -87,18 +89,26 @@ pub fn main() !void {
 
         for (v.items) |t| {
             // safe to output
-            try out.print("{s}:{s}\n", .{ t, k.* });
+            try out.print("{s}:{s}\n", .{ t, k });
             // std.debug.print("single {s} : {s}\n", .{ k.*, v.items[0] });
         }
         v.deinit();
-        gpa.free(k.*);
+        gpa.free(k);
     }
 }
-fn resloveTarget(target: []const u8, writer: anytype) !bool {
+fn resolveTarget(target: []const u8, writer: anytype) !bool {
     var fill: FindTarget = .{};
 
     // std.debug.print("{s} || ", .{target});
-    var ittr = std.mem.tokenize(u8, target, "-");
+    var ittr = std.mem.split(u8, target, "-");
+    var last: []const u8 = undefined;
+    while (ittr.next()) |part| {
+        last = part;
+    }
+    if (eqlIgnoreCase(last, "none")) {
+        fill.abi = .none;
+    }
+    ittr.reset();
     while (ittr.next()) |part| {
         if (eqlIgnoreCase(part, "unknown") or eqlIgnoreCase(part, "none")) continue;
         if (isUnknown(part)) {
