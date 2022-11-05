@@ -274,12 +274,13 @@ impl Generator {
     #[allow(clippy::many_single_char_names)]
     fn emit_expr(&mut self, e: &Expr) -> Result<()> {
         match &e.ty {
-            ExprType::Lit(v) => if v > &9223372036854775807 {
-                write!(self.current, "{}ULL", v)?
-            } else {
-                write!(self.current, "{}", v)?
-            },
-
+            ExprType::Lit(v) => {
+                if v > &9223372036854775807 {
+                    write!(self.current, "{}ULL", v)?
+                } else {
+                    write!(self.current, "{}", v)?
+                }
+            }
 
             ExprType::Name(n) => write!(self.current, "{}", n)?,
             ExprType::Unary(k, v) => {
