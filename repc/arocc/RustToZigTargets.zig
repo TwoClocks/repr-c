@@ -165,7 +165,8 @@ fn searchOs(text: []const u8, res: *FindTarget) void {
     }
 }
 
-fn searchModel(text: []const u8, res: *FindTarget) void {
+fn searchModel(raw: []const u8, res: *FindTarget) void {
+    const text = if (eqlIgnoreCase(raw, "i386")) "x86" else raw;
     if (res.model != null or res.arch == null) return;
     for (res.arch.?.allCpuModels()) |mod| {
         if (mod.llvm_name) |ll| {
@@ -177,7 +178,8 @@ fn searchModel(text: []const u8, res: *FindTarget) void {
     }
 }
 
-fn searchArch(text: []const u8, res: *FindTarget) void {
+fn searchArch(raw: []const u8, res: *FindTarget) void {
+    const text = if (eqlIgnoreCase(raw, "i386")) "x86" else raw;
     if (res.arch != null) return;
     // look for an exact match.
     if (std.meta.stringToEnum(Arch, text)) |a| {
